@@ -1,103 +1,100 @@
 <?php
 declare(strict_types=1);
 
-// Register custom endpoints
-add_action('rest_api_init', 'register_custom_endpoints');
-
-function register_custom_endpoints(): void
+class Custom_REST_API
 {
-    // Recent posts endpoint
-    register_rest_route('blog/v1', '/recent-posts', array(
-        'methods' => 'GET',
-        'callback' => 'get_recent_posts',
-        'permission_callback' => '__return_true',
-        'args' => array(
-            'per_page' => array(
-                'default' => 5,
-                'sanitize_callback' => 'absint',
-            ),
-            'page' => array(
-                'default' => 1,
-                'sanitize_callback' => 'absint',
-            ),
-        ),
-    ));
+    const string API_NAMESPACE = 'blog/v1';
 
-    // Search endpoint
-    register_rest_route('blog/v1', '/search', array(
-        'methods' => 'GET',
-        'callback' => 'search_posts',
-        'permission_callback' => '__return_true',
-        'args' => array(
-            'term' => array(
-                'required' => true,
-                'sanitize_callback' => 'sanitize_text_field',
-            ),
-            'per_page' => array(
-                'default' => 10,
-                'sanitize_callback' => 'absint',
-            ),
-            'page' => array(
-                'default' => 1,
-                'sanitize_callback' => 'absint',
-            ),
-        ),
-    ));
-}
-
-function get_recent_posts($request): WP_REST_Response
-{
-    $per_page = $request->get_param('per_page');
-    $page = $request->get_param('page');
-
-    $args = array(
-        'post_type' => 'post',
-        'posts_per_page' => $per_page,
-        'paged' => $page,
-        'orderby' => 'date',
-        'order' => 'DESC',
-    );
-
-    return extracted($args, $per_page);
-}
-
-/**
- * @param array $args
- * @param mixed $per_page
- * @return WP_REST_Response
- */
-function extracted(array $args, mixed $per_page): WP_REST_Response
-{
-    $query = new WP_Query($args);
-    $posts = $query->posts;
-
-    $data = array();
-    foreach ($posts as $post) {
-        $data[] = prepare_post_for_response($post);
+    public function __construct()
+    {
+        add_action('rest_api_init', [$this, 'register_routes']);
     }
 
-    $total_posts = $query->found_posts;
-    $max_pages = ceil($total_posts / $per_page);
+    public function register_routes(): void
+    {
+        register_rest_route(self::API_NAMESPACE, '/recent-posts', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [$this, 'get_recent_posts'],
+            'permission_callback' => '__return_true',
+            'args' => $this->get_pagination_args(),
+        ]);
 
-    $response = new WP_REST_Response($data, 200);
-    $response->header('X-WP-Total', $total_posts);
-    $response->header('X-WP-TotalPages', $max_pages);
+        register_rest_route(self::API_NAMESPACE, '/search', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [$this, 'search_posts'],
+            'permission_callback' => '__return_true',
+            'args' => array_merge(
+                $this->get_pagination_args(),
+                [
+                    'term' => [
+                        'required' => true,
+                        'sanitize_callback' => 'sanitize_text_field',
+                    ],
+                ]
+            ),
+        ]);
+    }
 
-    return $response;
+    private function get_pagination_args(): array
+    {
+        return [
+            'per_page' => [
+                'default' => 10,
+                'sanitize_callback' => 'absint',
+            ],
+            'page' => [
+                'default' => 1,
+                'sanitize_callback' => 'absint',
+            ],
+        ];
+    }
+
+    public function get_recent_posts(WP_REST_Request $request): WP_REST_Response
+    {
+        $args = [
+            'post_type' => 'post',
+            'posts_per_page' => $request->get_param('per_page'),
+            'paged' => $request->get_param('page'),
+            'orderby' => 'date',
+            'order' => 'DESC',
+        ];
+
+        return $this->get_posts_response($args);
+    }
+
+    public function search_posts(WP_REST_Request $request): WP_REST_Response
+    {
+        $args = [
+            'post_type' => 'post',
+            's' => $request->get_param('term'),
+            'posts_per_page' => $request->get_param('per_page'),
+            'paged' => $request->get_param('page'),
+        ];
+
+        return $this->get_posts_response($args);
+    }
+
+    private function get_posts_response(array $args): WP_REST_Response
+    {
+        $query = new WP_Query($args);
+        $posts = array_map([$this, 'prepare_post_for_response'], $query->posts);
+
+        $response = new WP_REST_Response($posts, 200);
+        $response->header('X-WP-Total', $query->found_posts);
+        $response->header('X-WP-TotalPages', ceil($query->found_posts / $args['posts_per_page']));
+
+        return $response;
+    }
+
+    private function prepare_post_for_response(WP_Post $post): array
+    {
+        // Implement this method to format the post data as needed
+        return [
+            'id' => $post->ID,
+            'title' => get_the_title($post),
+            // Add more fields as needed
+        ];
+    }
 }
 
-function search_posts($request): WP_REST_Response
-{
-    $search_term = $request->get_param('term');
-    $per_page = $request->get_param('per_page');
-    $page = $request->get_param('page');
-
-    $args = array(
-        'post_type' => 'post',
-        's' => $search_term,
-        'posts_per_page' => $per_page,
-        'paged' => $page,
-    );
-
-    return extracted($args, $per_page);
-}
+new Custom_REST_API();
