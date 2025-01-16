@@ -10,6 +10,7 @@ function register_custom_endpoints(): void
     register_rest_route('blog/v1', '/recent-posts', array(
         'methods' => 'GET',
         'callback' => 'get_recent_posts',
+        'permission_callback' => '__return_true',
         'args' => array(
             'per_page' => array(
                 'default' => 5,
@@ -26,6 +27,7 @@ function register_custom_endpoints(): void
     register_rest_route('blog/v1', '/search', array(
         'methods' => 'GET',
         'callback' => 'search_posts',
+        'permission_callback' => '__return_true',
         'args' => array(
             'term' => array(
                 'required' => true,
@@ -43,7 +45,7 @@ function register_custom_endpoints(): void
     ));
 }
 
-function get_recent_posts($request)
+function get_recent_posts($request): WP_REST_Response
 {
     $per_page = $request->get_param('per_page');
     $page = $request->get_param('page');
@@ -56,6 +58,16 @@ function get_recent_posts($request)
         'order' => 'DESC',
     );
 
+    return extracted($args, $per_page);
+}
+
+/**
+ * @param array $args
+ * @param mixed $per_page
+ * @return WP_REST_Response
+ */
+function extracted(array $args, mixed $per_page): WP_REST_Response
+{
     $query = new WP_Query($args);
     $posts = $query->posts;
 
@@ -74,7 +86,7 @@ function get_recent_posts($request)
     return $response;
 }
 
-function search_posts($request)
+function search_posts($request): WP_REST_Response
 {
     $search_term = $request->get_param('term');
     $per_page = $request->get_param('per_page');
@@ -87,20 +99,5 @@ function search_posts($request)
         'paged' => $page,
     );
 
-    $query = new WP_Query($args);
-    $posts = $query->posts;
-
-    $data = array();
-    foreach ($posts as $post) {
-        $data[] = prepare_post_for_response($post);
-    }
-
-    $total_posts = $query->found_posts;
-    $max_pages = ceil($total_posts / $per_page);
-
-    $response = new WP_REST_Response($data, 200);
-    $response->header('X-WP-Total', $total_posts);
-    $response->header('X-WP-TotalPages', $max_pages);
-
-    return $response;
+    return extracted($args, $per_page);
 }
