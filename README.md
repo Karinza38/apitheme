@@ -28,7 +28,7 @@ Query parameters:
 
 GET `/wp-json/blog/v1/search`
 
-Query parameters:
+Query parameters: 
 - `term`: Search term (required)
 - `per_page`: Number of posts per page (default: 10)
 - `page`: Page number (default: 1)
